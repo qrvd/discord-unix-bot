@@ -1,0 +1,34 @@
+#!/bin/bash
+set -ueo pipefail
+
+# If it has been picked, then it's done.
+if [ -e var/drop/has-picked ]; then
+	rm var/drop/has-picked
+	exit 101
+fi
+
+# Cancel drops that are too old.
+# This is because "old drops" are those that were probably missed,
+# and they will linger in the channel history.
+max_age="$(cat etc/drop/max-age)"
+if [[ "$max_age" -gt 0 ]]; then
+	now="$(date +%s)"
+	if [[ ! "$(( "$(cat var/enc/time:start)" + max_age ))" -gt "$now" ]]; then
+
+		# Lucky tries to get the missed picks.
+		if [ ! -e var/drop/lucky-picked ]; then
+			if [ ! -e var/drop/lucky-try-pick ]; then
+				stream="$(cat var/enc/stream)"
+				echo 'The pick is mine!' | sbin/say.pawn "$stream"
+				echo '$ pick' | sbin/say.pawn "$stream"
+				touch var/drop/lucky-try-pick
+			fi
+		else
+			# echo "Cancelled the existing drop."
+			rm -f var/drop/amount var/drop/lucky-picked var/drop/lucky-try-pick
+			exit 101
+		fi
+	fi
+fi
+
+exit 0

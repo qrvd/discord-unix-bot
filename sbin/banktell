@@ -1,0 +1,6 @@
+#!/bin/bash
+set -ueo pipefail
+userid="$(sbin/readnum "$0" 'author ID' "$1")"
+printf 'Your current balance is:\n'
+printf 'Bank: %s, ' "$(sbin/printcash "$(cat home/"$1"/bankbal)")"
+printf 'Wallet: %s.' "$(sbin/printcash "$(cat home/"$1"/bal)")"

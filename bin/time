@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ueo pipefail
+
+printf 'The time is:```\n%s```' "$(date +'%A, %B %d at %H:%M:%S %Z')"
+

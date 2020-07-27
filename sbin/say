@@ -1,0 +1,72 @@
+#!/bin/bash
+set -ueo pipefail
+
+# validate destination
+if [[ "$#" -eq 0 ]]; then
+	if [ ! -e var/say.current ]; then
+		exit 1
+	fi
+	deststr="$(cat var/say.current)"
+else
+	deststr="$1"
+fi
+dest="$(sbin/readnum "$0" 'stream ID' "$deststr")"
+
+# validate message
+msg="$(cat /dev/stdin)"
+if [ -z "$(sed -E "s/[\s\t\r ]+//g" <<< "$msg")" ]; then
+	printf 'Cancel send to %s: cannot send an empty message.\n' "$dest" 1>&2
+	exit 2
+fi
+
+botid="$(cat root/id)"
+
+# shouldn't send too many messages within the same second -- something would be up then.
+now="$(date +%s)"
+if [ -e var/say.last-message-time ]; then
+	if [ "$(cat var/say.last-message-time)" == "$now" ]; then
+		# ok, combo
+		combo_cnt=1
+		if [ -e var/say.combo ]; then
+			combo_cnt="$(cat var/say.combo)"
+		fi
+		spam_limit="$(cat etc/say.spam-limit)"
+		if [[ ! "$combo_cnt" -lt "$spam_limit" ]]; then
+			# hit the spam limit
+			printf '%s: will not say message: hit the spam limit\n' "$0" 1>&2
+			printf 'say to %s filtered: %s\n' "$dest" "$msg" | tee --append var/say-spam.log 1>&2
+			exit 1
+		fi
+		printf '%d' "$((1 + combo_cnt))" > var/say.combo
+	else
+		# combo ended.
+		rm -f var/say.combo
+		printf '%d' "$now" > var/say.last-message-time
+	fi
+else
+	printf '%d' "$now" > var/say.last-message-time
+fi
+
+# hehe
+# if [ -e home/"$botid"/quest/2 ]; then
+# 	msg="$(sed -E "s/:moneybag:/:money_with_wings:/g;s/a/e/g;s/A/Ä/g" <<< "$msg")"
+# fi
+
+# send to socket
+if [ -e var/say.last-message-id ]; then
+	rm var/say.last-message-id
+fi
+addr="$(cat etc/speakaddr)"
+port="$(cat etc/speakport)"
+{
+	printf 'say\x00'
+	printf '%s\x00' "$dest"
+	printf '%s\x00' "$(wc -c <<< "$msg")"
+	printf '%s' "$msg"
+} >> /dev/tcp/"$addr"/"$port"
+
+# remember stream that was last used
+if [[ "$#" -gt 0 ]]; then
+	printf '%s' "$dest" > var/say.current
+fi
+

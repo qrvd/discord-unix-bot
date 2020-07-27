@@ -1,0 +1,112 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	quests="$(sbin/listquests "$AUTHORID" | sort -n)"
+	if [ -n "$quests" ]; then
+		echo "Your current quests:"
+		printf '```'
+		now="$(date --date='today 00:00' +%s)"
+		echo "$quests" | while read q; do
+			qhome="$AUTHORHOME"/quest/"$q"
+			qtime="$(cat "$qhome"/start-time)"
+			wins="$(sbin/count-quest-wins "$AUTHORID" "$q")"
+			qstr="$(sbin/getquest "$q")"
+
+			# Quest number and name
+			printf '[%d] %s' "$q" "$qstr"
+
+			# Wins
+			if [ "$wins" != '0' ]; then
+				printf ', %d🏆' "$wins"
+			fi
+
+			# Second line
+			printf '\n'
+
+			if [ "$q" != '5' ]; then
+				progress="$((1 + (now-qtime)/86400))"
+				max_progress=7
+				printf '\tProgress: day %d/%d ' "$progress" "$max_progress"
+				# Progress bar
+				printf '['
+				for i in {1..7}; do
+					if [[ "$i" -gt "$progress" ]]; then
+						printf '-'
+					else
+						# printf '\x254'
+						printf '■'
+					fi
+				done
+				printf ']\n'
+			else
+				if [ -e "$qhome"/emotes ]; then
+					num_emotes="$(wc -l < "$qhome"/emotes)"
+				else
+					num_emotes=0
+				fi
+				max_emotes="$(ls etc/quest.5.emotes | wc -l)"
+				printf '\tProgress: emote %d/%d ' "$num_emotes" "$max_emotes"
+				progress="$(echo | awk "{ print 7.0 * $num_emotes / $max_emotes; }" | cut -d . -f 1)"
+				if [ "$progress" == '0' ]; then
+					if [ "$num_emotes" != '0' ]; then
+						# show that you've at least gotten started!
+						progress=1
+					fi
+				else
+					progress="$((progress + 1))"
+				fi
+
+				# Progress bar
+				printf '['
+				for i in {1..7}; do
+					if [[ "$i" -gt "$progress" ]]; then
+						printf '-'
+					else
+						# printf '\x254'
+						printf '■'
+					fi
+				done
+				printf ']\n'
+			fi
+		done
+		printf '```'
+	else
+		echo '`$ promise` (also known as `$ quest`) is for choosing a quest from the `$ quests` list!'
+		echo 'Here is an example of how to use it: `$ promise 1`.'
+		echo 'If you run that command, you promise to do the first quest.'
+		exit 1
+	fi
+	exit
+fi
+
+id="$1"
+if ! sbin/readnum "$0" 'quest number' "$id" 1>/dev/null 2>/dev/null; then
+	echo "Sorry! This is not a valid quest number: \`$id\`."
+	echo "Try to write the number of a quest from the \`$ quests\` list!"
+	exit 1
+fi
+
+if [ -e "$AUTHORHOME"/quest/"$id" ]; then
+	printf 'You have already promised to do **quest #%d**:' "$id"
+	printf '```\n%s```' "$(sbin/getquest "$id")"
+	echo 'Use `$ quest` or `$ promise` to see a list of your current quests!'
+	# echo "Quest folder '$id' already exists." 1>&2
+else
+	nq="$(wc -l < etc/quests)"
+	if [[ "$id" -gt "$nq" ]]; then
+		echo "There is no quest #$id. Please check the \`$ quests\` list!"
+		exit 1
+	fi
+	# create
+	cp -r etc/quest.template "$AUTHORHOME"/quest/"$id"
+	qtime="$(date --date='today 00:00' +%s)"
+	printf '%s' "$qtime" | tee "$AUTHORHOME"/quest/"$id"/start-time "$AUTHORHOME"/quest/"$id"/last-time >/dev/null
+	sbin/event "$AUTHORID" QUEST-START "$id"
+	# announce
+	printf '%s **Started quest #%d** on *%s:*' \
+		"$(sbin/mention "$AUTHORID")" "$id" "$(date --date="@$qtime" +'%A, %B %d')"
+	sbin/fence sbin/getquest "$id"
+	echo 'Remember to **talk every day** so it will not be cancelled!'
+fi
+

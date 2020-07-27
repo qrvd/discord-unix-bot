@@ -1,0 +1,58 @@
+#!/bin/bash
+set -ueo pipefail
+
+function usage() {
+	echo 'Usage: `betflip AMOUNT (heads or tails)`'
+}
+
+if [[ "$#" -lt 2 ]]; then
+	usage
+	exit
+fi
+
+amt="$(sbin/tolower <<< "$1" | tr -d \$)"
+if [ "$amt" == 'all' ]; then
+	amt="$(cat "$AUTHORHOME"/bal)"
+elif grep -qvE "^\s*[0-9]+\s*$" <<< "$amt"; then
+	echo 'That is not a valid bet amount!'
+	usage
+	exit 1
+fi
+
+# some people have negative balance
+if [ "$amt" == '0' ] || [[ "$amt" -lt 0 ]]; then
+	echo "You can't bet for $(sbin/printcash "$amt")"
+	exit 1
+fi
+
+balfile="$AUTHORHOME"/bal
+oldbal="$(cat "$balfile")"
+if [[ "$amt" -gt "$oldbal" ]]; then
+	echo "You can't bet for more than you have!"
+	exit 1
+fi
+
+choice="$(sbin/tolower <<< "$2")"
+if grep -qvE "^(h(eads?)?|t(ails?)?)$" <<< "$choice"; then
+	echo 'That is not a valid choice!'
+	usage
+	exit 1
+else
+	choice="$(cut -b 1 <<< "$choice")"
+fi
+
+printf "Betting for %s.\n" "$(sbin/printcash "$amt")"
+
+bin/mention "$AUTHORID"
+rnd="$((RANDOM % 2))"
+if [[ "$rnd" -eq 0 ]] && [ "$choice" == "h" ] || [[ "$rnd" -eq 1 ]] && [ "$choice" == "t" ]; then
+	# win!
+	sbin/transfer-balance "$BOTID" "$AUTHORID" "$amt"
+	echo " You win!"
+else
+	# loss...
+	sbin/transfer-balance "$AUTHORID" "$BOTID" "$amt"
+	echo " You lost..."
+fi
+echo "New wallet balance: $(sbin/printcash "$(cat "$balfile")")"
+

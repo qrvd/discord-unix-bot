@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ueo pipefail
+
+q="$1"
+head -qn "$q" < etc/quests | tail -qn 1

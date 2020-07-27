@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ueo pipefail
+
+# remove options that would be sent to echo
+output="$(sed -E "s/(\s|\n| |^)\-[Een]+($|\s|\n| )//g" <<< "$@")"
+if [ -z "$output" ]; then
+	output='*empty*'
+fi
+echo "$output"
+

@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ueo pipefail
+
+streamid="$(sbin/readnum "$0" 'stream ID' "$1")"
+named_device_path="$(symlinks -vr dev | grep -F -- "id/$streamid" | head -qn 1 | cut -d ' ' -f 2 | head -qn 1)"
+if [ -z "$named_device_path" ]; then
+	printf '%s: stream %s has no named device.\n' "$0" "$streamid" 1>&2
+	exit 1
+fi
+printf '%s' "$(basename "$named_device_path")"

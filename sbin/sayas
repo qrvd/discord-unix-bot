@@ -1,0 +1,24 @@
+#!/bin/bash
+set -ueo pipefail
+
+authorid="$(sbin/readnum "$0" 'sayas author id' "$1")"
+if grep -Fxv "$authorid" < etc/cmd/users; then
+	printf '%s: sayas author "%s" is not authorized to use sayas.\n' "$0" "$authorid" 1>&2
+	exit 1
+fi
+userid="$(sbin/readnum "$0" 'user id' "$2")"
+if [ ! -e home/"$userid" ]; then
+	printf '%s: parsed uid "%s" is not registered.\n' "$0" "$userid" 1>&2
+	exit 1
+elif [ ! -e home/"$userid"/name ]; then
+	printf '%s: parsed uid "%s" has no set username.\n' "$0" "$userid" 1>&2
+	exit 1
+fi
+username="$(cat home/"$userid"/name)"
+srcid="$(sbin/readnum "$0" 'stream id' "$3")"
+srcname="$(sbin/printstream "$srcid")"
+
+# log the "sayas" event with the proper message ID and the author
+rawmsg="$(cat /dev/stdin)"
+sbin/event "$authorid" SAYAS "$userid" "$srcid" "$(sbin/hashstr <<< "$rawmsg")"
+sbin/on-message "$srcid" "$srcname" "$userid" "$username" <<< "$rawmsg"

@@ -1,0 +1,21 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -lt 1 ]] || [[ "$#" -gt 2 ]]; then
+	printf '%s: invalid usage "%s"\n' "$0" "$@" 1>&2
+	exit 1
+fi
+userid="$(sbin/readnum "$0" 'user ID' "$1")"
+if [[ "$#" -eq 2 ]]; then
+	placeholder="$2"
+else
+	placeholder="$(printf '[u:%s]' "$userid")"
+fi
+uh=home/"$userid"
+if [ -e "$uh"/nick ]; then
+	printf '~%s' "$(cat "$uh"/nick)"
+elif [ -e "$uh"/name ]; then
+	printf '%s' "$(cat "$uh"/name)"
+else
+	printf '%s' "$placeholder"
+fi

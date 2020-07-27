@@ -1,0 +1,158 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ ! "$#" -eq 3 ]]; then
+	printf 'How to use this command:\n'
+	printf 'Write `$ bet amount result number`\n'
+	printf 'For example:\n'
+	printf '`$ bet 100 success 4` would bet $100 that the 4th item in the list will succeed.\n'
+	printf 'And: `$ bet 100 fail 7` would bet $100 that the 7th item will fail.\n'
+	printf 'To see the list, use the command `$ bets`.\n'
+	exit 1
+fi
+
+# bet AMOUNT OUTCOME ENTRY-ID
+amountstr="$(sbin/tolower "$1" | tr -d \$)"
+if [ "$amountstr" == 'all' ]; then
+	amount="$(cat "$AUTHORHOME"/bal)"
+else
+	amount="$(sbin/readnum.user "$0" 'betting amount' "$1")"
+fi
+if [[ "$amount" -eq 0 ]]; then
+	printf 'Betting nothing is not allowed!\n'
+	echo '*In a way, you already have the reward!*'
+	exit 1
+fi
+bal="$(cat home/"$AUTHORID"/bal)"
+if [[ "$amount" -gt "$bal" ]]; then
+	printf 'You have a balance of %s in your **wallet**, so you can'"'"'t bet the bigger amount %s!\n' \
+		"$(sbin/printcash "$bal")" "$(sbin/printcash "$amount")"
+	echo '*I wish I had more money too.*'
+	exit 1
+fi
+
+outcome="$(sbin/tolower <<< "$2")"
+if [ "$outcome" == 'complete' ] || [ "$outcome" == 'succeed' ] || [ "$outcome" == 'success' ] || [ "$outcome" == 'win' ] || [ "$outcome" == 'completed' ]; then
+	outcome='win'
+elif [ "$outcome" == 'lose' ] || [ "$outcome" == 'loss' ] || [ "$outcome" == 'fail' ]; then
+	outcome='lose'
+else
+	printf 'Sorry! `%s` is not a betting outcome I recognize. Please try with a different word.\n' "$outcome"
+	echo '*Like `win`, or `lose`.*'
+	exit 1
+fi
+
+# will print & exit on error if the number isn't valid
+entry_id="$(sbin/readnum.user "$0" 'entry number' "$3")"
+
+function entry-out-of-range() {
+	printf 'Sorry! `%s` is not the number of an entry in the list. Please try again.\n' "$1"
+	exit 1
+}
+if [[ ! "$entry_id" -gt 0 ]]; then
+	entry-out-of-range "$entry_id"
+fi
+
+ongoing_quests="$(sbin/get-ongoing-quests)"
+quest_count="$(wc -l <<< "$ongoing_quests")"
+bet_count="$(wc -l var/bets | cut -d ' ' -f 1)"
+total="$(( "$quest_count" + "$bet_count" ))"
+
+if [[ "$total" -eq 0 ]]; then
+	echo "There are no entries to bet on right now! Please come back later."
+	exit 1
+elif [[ "$entry_id" -gt "$total" ]]; then
+	entry-out-of-range "$entry_id"
+fi
+
+#
+# Construct a bet line based on the format in etc/bets.example
+#
+# vars: amount outcome entry_id
+#
+
+# ident is used after this as well
+
+# oh, this relies on the quest format as well
+if [[ ! "$entry_id" -gt "$quest_count" ]]; then
+	# betting on a quest
+	entrypos="$(( "$entry_id" - 0 ))"
+	entryln="$(head -qn "$entrypos" <<< "$ongoing_quests" | tail -qn 1)"
+	betother="$(cut -d ' ' -f 1 <<< "$entryln")"
+	ident="$(cut -d ' ' -f 2 <<< "$entryln")"
+	entrytype='quest'
+	if [ "$outcome" == 'win' ]; then
+		betevent="$(printf '%s %s' "QUEST-COMPLETE" "$ident")"
+	elif [ "$outcome" == 'lose' ]; then
+		betevent="$(printf '%s %s' "QUEST-FAIL" "$ident")"
+	else
+		printf "Invalid parsed outcome '%s'\n" "$outcome" 1>&2
+		exit 1
+	fi
+else
+	# betting on a bet
+	entrypos="$(( "$entry_id" - "$quest_count" ))"
+	entryln="$(head -qn "$entrypos" var/bets | tail -qn 1)"
+	ident="$(cut -d ' ' -f 1 <<< "$entryln")"
+	betother="$(cut -d ' ' -f 3 <<< "$entryln")"
+	entrytype='bet'
+	if [ "$outcome" == 'win' ]; then
+		betevent="BET-WIN"
+		betevent="$(printf '%s %s' "BET-WIN" "$ident")"
+	elif [ "$outcome" == 'lose' ]; then
+		betevent="BET-LOSE"
+		betevent="$(printf '%s %s' "BET-LOSE" "$ident")"
+	else
+		printf "Invalid parsed outcome '%s'\n" "$outcome" 1>&2
+		exit 1
+	fi
+fi
+
+if [ "$AUTHORID" == "$betother" ] && [ "$AUTHORID" != '341180583420100610' ]; then
+	echo "Sorry, but you can't make a bet on yourself!"
+	echo '*Instead, just believe in yourself!*'
+	exit 1
+fi
+
+# hash identifying parts of the bet to make a unique bet ID
+# (representing the relationship between the one making the bet,
+# the outcome being bet on, and the one affected by the outcome)
+betid="$(printf '%s %s %s %s' "$AUTHORID" "$betother" "$entrytype" "$ident" | sha256sum | cut -d ' ' -f 1)"
+
+# if it already exists, we can prevent this bet from being doubled.
+# assumes format in etc/bets.example
+set +e
+	existing_bet="$(grep -w -- "^$betid " < var/bets)"
+set -e
+if [ -n "$existing_bet" ]; then
+	echo "You have already made a bet on this entry!"
+	printf '```\n'
+	sbin/printbet "$existing_bet"
+	printf '```'
+	exit 1
+fi
+
+# generate the part after the ID and timestamp
+# NOTE that identifying parts must be appropriately represented in in $betid
+betcontents="$(printf '%s %d %s %s' "$AUTHORID" "$amount" "$betother" "$betevent")"
+
+# construct the bet line
+betline="$(printf '%s %d %s' "$betid" "$(date +%s)" "$betcontents")"
+
+# pay & register the bet
+sbin/transfer-balance "$AUTHORID" "$BOTID" "$amount"
+printf '%s\n' "$betline" >> var/bets
+
+# announce
+printf '%s Bet registered:' "$(sbin/mention "$AUTHORID")"
+printf '```\n'
+sbin/printbet "$betline"
+printf '```'
+
+if [ "$AUTHORID" == '341180583420100610' ] && [ "$betother" == "$AUTHORID" ]; then
+	echo '*Betting on yourself is cheating, Cloudy!*'
+fi
+
+# cascade
+sbin/event "$AUTHORID" BET-SET "$betid" "$amount"
+

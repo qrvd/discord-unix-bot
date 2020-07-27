@@ -1,0 +1,436 @@
+#!/bin/bash
+set -ueo pipefail
+
+# exported so that the executed command may use them
+SRCID="$(sbin/readnum "$0" 'source ID' "$1")"
+export SRCID
+export SRCNAME="$2"
+AUTHORID="$(sbin/readnum "$0" 'author ID' "$3")"
+export AUTHORID
+export AUTHORHOME=home/"$AUTHORID"
+export AUTHORNAME="$4"
+
+# empty raw message can be caused by: sending images, server-side events (join/leave),
+# Disboard-style banner messages, which is OK.
+RAWMESSAGE="$(cat /dev/stdin)"
+export RAWMESSAGE
+
+# for the convenience of running encounters
+export ENCHOME=var/enc/data
+
+# make sure the user is registered.
+if [ ! -e "$AUTHORHOME" ]; then
+	sbin/event "$AUTHORID" PRE-REGISTER
+	sbin/adduser "$AUTHORID" "$AUTHORNAME"
+	sbin/event "$AUTHORID" POST-REGISTER
+fi
+
+# track usernames
+if [ ! -e "$AUTHORHOME"/name ] || [ "$AUTHORNAME" != "$(cat "$AUTHORHOME"/name)" ]; then
+	sbin/event "$AUTHORID" USERNAME "$AUTHORNAME"
+	printf "%s" "$AUTHORNAME" > "$AUTHORHOME"/name
+fi
+
+# remember their last location
+function enter-location() {
+	local loc="$1"
+	sbin/event "$AUTHORID" ENTER "$loc"
+	printf '%s' "$loc" > "$AUTHORHOME"/location
+}
+if [ -e "$AUTHORHOME"/location ]; then
+	old_location="$(cat "$AUTHORHOME"/location)"
+	if [ "$old_location" != "$SRCID" ]; then
+		sbin/event "$AUTHORID" MOVE "$old_location" "$SRCID"
+		sbin/event "$AUTHORID" LEAVE "$old_location"
+		enter-location "$SRCID"
+	fi
+else
+	enter-location "$SRCID"
+fi
+
+sbin/event "$AUTHORID" MESSAGEHASH "$SRCID" "$(sbin/hashstr <<< "$RAWMESSAGE")"
+printf '%d' \
+	"$(("$(cat "$AUTHORHOME"/msgcount)" + 1))" > "$AUTHORHOME"/msgcount
+
+# give xp for non-empty messages.
+if [ -n "$RAWMESSAGE" ]; then
+	now="$(date +%s)"
+	if [[ ! "$((now - "$(cat "$AUTHORHOME"/xp-timer)" ))" -lt "$(cat etc/xp-delay)" ]]; then
+		printf "%d" "$now" > "$AUTHORHOME"/xp-timer
+		xpbonus="$(sbin/xp-inc)"
+		sbin/modify-xp "$AUTHORID" "$xpbonus"
+		sbin/event "$AUTHORID" GAINXP "$xpbonus"
+
+		# level up
+		set +e
+		if sbin/update-level "$AUTHORID"; then
+			set -e
+			sbin/on-levelup "$AUTHORID" "$SRCID"
+		fi
+		set -e
+	fi
+fi
+
+MESSAGE="$(sbin/clean-message <<< "$RAWMESSAGE")"
+export MESSAGE
+
+# handle quests
+# they need to be able to handle empty RAWMESSAGE or empty MESSAGE correctly
+if [ "$(cut -b 1 <<< "$SRCNAME")" != '@' ]; then
+	if [ ! -e etc/queststream ]; then
+		queststream="$SRCID"
+	else
+		queststream="$(cat etc/queststream)"
+	fi
+	scr="$(sbin/listquests "$AUTHORID")"
+	now="$(date +%s)"
+	for q in $scr; do
+		QUESTHOME="$AUTHORHOME"/quest/"$q"
+		QUESTSTART="$(cat "$QUESTHOME"/start-time)"
+		if [ "$(date --date="@$QUESTSTART" +'%H:%M:%S')" != '00:00:00' ]; then
+			# fix old-style quest starting dates (where we assumed 24-hour days)
+			newqstart="$(date --date="$(date --date="@$QUESTSTART" +'%Y-%m-%d 00:00:00 %Z')" +%s)"
+			# could typically lead to a failure, so bump "last-time" as well (lying is bad, I know)
+			if [ -e "$QUESTHOME"/last-time ]; then
+				old_lt="$(cat "$QUESTHOME"/last-time)"
+				printf 'on-message: quest bump for %s: Changed last-time %d -> %d\n' \
+					"$(sbin/printname "$AUTHORID")" "$old_lt" "$((old_lt + QUESTSTART - newqstart))" 1>&2
+				printf '%d' "$(( old_lt + (QUESTSTART-newqstart) ))" > "$QUESTHOME"/last-time
+			fi
+			printf '%d' "$newqstart" > "$QUESTHOME"/start-time
+			# continue from here
+			printf 'on-message: quest bump for %s: Changed QUESTSTART %d -> %d\n' \
+				"$(sbin/printname "$AUTHORID")" "$QUESTSTART" "$newqstart" 1>&2
+			QUESTSTART="$newqstart"
+		fi
+		QUESTTIME="$((now - QUESTSTART))"
+		export QUESTHOME QUESTSTART QUESTTIME
+			if [ ! -e "$QUESTHOME"/last-time ]; then
+				printf '%d' "$QUESTSTART" > "$QUESTHOME"/last-time
+			fi
+			### Keep these lines together ###
+			set +e
+				questout="$(etc/quest/"$q")"
+				rslt="$?"
+			set -e
+			if [ -n "$questout" ]; then
+				printf '%s' "$questout" | sbin/say "$queststream"
+			fi
+			### Keep these lines together ###
+			# Possible time-out (if you didn't already complete the quest)
+			timeout=0
+			if [[ "$rslt" -eq 0 ]] && [[ ! "$((now - "$(cat "$QUESTHOME"/last-time)" ))" -lt 86400 ]]; then
+				timeout=1
+				rslt=2
+			fi
+		export -n QUESTHOME QUESTTIME QUESTSTART
+		if [ "$rslt" == '101' ] || [ "$rslt" == '202' ]; then
+			# announce
+			{
+				if [[ "$rslt" -eq 101 ]]; then
+					# complete
+					printf '%s **Completed quest #%s!**' "$(sbin/mention "$AUTHORID")" "$q"
+					sbin/fence sbin/getquest "$q"
+
+					if [ "$SRCID" != "$queststream" ]; then
+						printf '%s **Completed quest #%s!**\nMore details in %s.\n' \
+							"$(sbin/mention "$AUTHORID")" "$q" "$(sbin/mention.stream "$queststream")" | sbin/say "$SRCID"
+					fi
+				elif [[ "$rslt" -eq 202 ]]; then
+					# fail
+					printf '%s **Failed quest #%s!**' "$(sbin/mention "$AUTHORID")" "$q"
+					if [[ "$timeout" -eq 0 ]]; then
+						printf '\nReason: The promise was broken.'
+						sbin/fence sbin/getquest "$q"
+						# printf 'After you said:```\n%s```' "$(tr '`' "'" <<< "$RAWMESSAGE")"
+						if [ "$q" == '2' ]; then
+							printf 'After you said:\n%s\n' "$(tr '`' "'" <<< "$RAWMESSAGE" | sed -E "s/^/> /g" | sed -E 's/([Aaあ]+)/__**\1**__/g')"
+						elif [ "$q" == '4' ]; then
+							printf 'After you said:\n%s\n' "$(tr '`' "'" <<< "$RAWMESSAGE" | sed -E "s/^/> /g")"
+						else
+							printf 'After you said:\n%s\n' "$(tr '`' "'" <<< "$RAWMESSAGE" | sed -E "s/^/> /g")"
+						fi
+						printf 'In %s.' "$(sbin/chmention "$SRCID")"
+					else
+						printf '\nReason: Did not talk for over 24 hours.'
+						sbin/fence sbin/getquest "$q"
+					fi
+					if [ "$SRCID" != "$queststream" ]; then
+						printf '%s **Failed quest #%s!**\nMore details in %s.\n' \
+							"$(sbin/mention "$AUTHORID")" "$q" "$(sbin/mention.stream "$queststream")" | sbin/say "$SRCID"
+					fi
+				fi
+			} | sbin/say "$queststream"
+
+			# log the event
+			if [[ "$rslt" -eq 101 ]]; then
+				# complete
+				sbin/event "$AUTHORID" QUEST-COMPLETE "$q"
+				printf '%s\n' "$q" >> "$AUTHORHOME"/scroll.completed
+			elif [[ "$rslt" -eq 202 ]]; then
+				# fail
+				if [[ "$timeout" -eq 1 ]]; then
+					sbin/event "$AUTHORID" QUEST-TIMEOUT "$q"
+				fi
+				sbin/event "$AUTHORID" QUEST-FAIL "$q"
+			fi
+
+			# after events have processed the quest and its outcome,
+			# resolve the quest.
+			# remove old quest data
+			dst="$AUTHORHOME"/quest.old/"$q"
+			if [ -e "$dst" ]; then
+				rm -r -- "$dst"
+			fi
+			mv -f -- "$AUTHORHOME"/quest/"$q" "$dst"
+		else
+			# continue the quest
+			printf '%d' "$now" > "$AUTHORHOME"/quest/"$q"/last-time
+		fi
+	done
+fi
+
+#
+# Random encounters
+#
+function should-drop() {
+	# only in an actual channel
+	if [ "$(cut -b 1 <<< "$SRCNAME")" != '#' ]; then
+		return 1
+	fi
+	# Not unless it's time. But forced events override the timer.
+	# forced events happen immediately
+	local now="$1"
+	if [[ "$now" -lt "$(cat var/enc/time:start)" ]] && [ ! -e var/enc/next ]; then
+		return 1
+	fi
+	# Only drop during actual conversation
+	# Not for empty messages (usually special system messages/embeds/mere pictures)
+	# Don't drop during command invocations
+	if [ -z "$RAWMESSAGE" ] || [ -z "$MESSAGE" ] || sbin/iscmd "$MESSAGE"; then
+		return 1
+	fi
+	# Not in the special channels
+	if [ "$SRCID" == '733821613153452043' ] || [ "$SRCID" == '646735211047944194' ]; then
+		return 1
+	fi
+	# And not from myself
+	if [ "$AUTHORID" == "$BOTID" ]; then
+		return 1
+	fi
+	return 0
+}
+evtype="$(cat var/enc/type)"
+if [ "$evtype" == 'none' ]; then
+	now="$(date +%s)"
+	if should-drop "$now"; then
+		if [ -e var/enc/next ]; then
+			new_evtype="$(cat var/enc/next)"
+			printf 'Running forced event %s\n' "$new_evtype" 1>&2
+			rm var/enc/next
+		else
+			time_of_day="$(cat var/clock/state)"
+			evlist="$(cat etc/special-event-types."$time_of_day")"
+			new_evtype="$(shuf -n 1 <<< "$evlist")"
+		fi
+		# never generate the exact same event twice
+		# if [ -e var/drop/event-type.previous ]; then
+		# 	numev="$(wc -l <<< "$evlist")"
+		# 	if [[ "$numev" -gt 1 ]]; then
+		# 		lastev="$(cat var/drop/event-type.previous)"
+		# 		while [ "$new_evtype" == "$lastev" ]; do
+		# 			new_evtype="$(shuf -n 1 <<< "$evlist")"
+		# 			printf 'Iterating evtypes.\n' 1>&2
+		# 		done
+		# 	fi
+		# fi
+		# then do it!
+		handled=1
+		# anytime
+		if [ "$new_evtype" == 'drop' ]; then
+			# Good old money drop
+			amount="$(sbin/rng "$(cat etc/drop/amount-min)" "$(cat etc/drop/amount-var)")"
+			printf "%d" "$amount" > var/drop/amount
+			cp -f var/say.last-message-id var/drop/drop.message-id
+			# Announce
+			printf '%s has been dropped! Type `$ pick` quickly to get it!\n' \
+				"$(sbin/printcash "$amount")" | sbin/say "$SRCID"
+			# To have Lucky say it feels weird. This is Kanna's thing, you know.
+			# printf 'Whoops, I have dropped %s. Type `$ pick` quickly to get it!\n' \
+			# 	"$(sbin/printcash "$amount")" | sbin/say.pawn "$SRCID"
+		elif [ "$new_evtype" == 'xpdrop' ]; then
+			# Good old XP drop
+			amount="$(sbin/rng 100 250)"
+			printf "%d" "$amount" > var/drop/amount
+			cp -f var/say.last-message-id var/drop/drop.message-id
+			# Announce
+			printf '**%sXP** fell from the sky! Type `$ pick` quickly to get it!\n' \
+				"$amount" | sbin/say "$SRCID"
+		elif [ "$new_evtype" == 'autocorrect' ]; then
+			# Special quest
+			# EXP reward
+			true
+		elif [ "$new_evtype" == 'thief' ]; then
+			channels="$(cat etc/thief.channels)"
+			if [ -z "$channels" ]; then
+				printf 'No channels available for thief event.' 1>&2
+				handled=0
+			elif [[ ! "$(cat home/"$(cat var/bot/pawn.id)"/bal)" -gt 0 ]]; then
+				# Lucky has no money to lose.
+				handled=0
+			else
+				# clean up since last time
+				# rm -rf -- var/drop/thief
+				rm -f var/drop/thief.reward var/drop/thief.right var/drop/thief.wrong var/drop/thief.caught var/drop/thief.revealed
+				rm -f var/drop/thief.stolen-balance
+				# read
+				pawnid="$(cat var/bot/pawn.id)"
+				reward="$(sbin/rng "$(cat etc/drop/amount-min)" "$(cat etc/drop/amount-var)")"
+				reward="$((reward * 10))"
+				# prepare the reward
+				printf "%d" "$reward" > var/drop/thief.reward
+				sbin/transfer-balance "$BOTID" "$pawnid" "$reward"
+				# the theft occurs!
+				pawnbal="$(cat home/"$pawnid"/bal)"
+				printf "%d" "$pawnbal" > var/drop/thief.stolen-balance
+				sbin/transfer-balance "$pawnid" "$(cat var/bot/thief.id)" "$pawnbal"
+				# start
+				{
+					printf "Somebody stole my money! Please help me **catch the thief!**\n"
+					printf 'Use the command `$ search` in these channels:'
+					comma=0
+					echo "$channels" | while read ch; do
+						if [ "$ch" != "$SRCID" ]; then
+							if [ "$comma" == '1' ]; then
+								printf ','
+							else
+								comma=1
+							fi
+							printf ' %s' "$(sbin/mention.stream "$ch")"
+						fi
+					done
+					unset comma
+					printf '.\n'
+				} | sbin/say.pawn "$SRCID"
+				# select some random channel
+				nch="$(wc -l <<< "$channels")"
+				chpos="$((RANDOM % nch))"
+				rightch="$(head -qn "$((chpos + 1))" <<< "$channels" | tail -qn 1)"
+				if [ "$nch" != '1' ]; then
+					while [ "$rightch" == "$SRCID" ]; do
+						chpos="$((RANDOM % nch))"
+						rightch="$(head -qn "$((chpos + 1))" <<< "$channels" | tail -qn 1)"
+						printf 'Re-rolling channel ID for thief event.'
+					done
+				fi
+				printf '%s' "$rightch" > var/drop/thief.right
+				echo "$channels" | while read -r line; do
+					if [ "$line" != "$rightch" ]; then
+						echo "$line" >> var/drop/thief.wrong
+					fi
+				done
+			fi
+		# daytime
+		elif [ "$new_evtype" == 'rainbow' ]; then
+			# Expedition to the end of the rainbow (will you donate?)
+			amount="$(( 2 * "$(sbin/rng "$(cat etc/drop/amount-min)" "$(cat etc/drop/amount-var)")" ))"
+			printf 'I am hosting an expedition to the end of the rainbow! I need **1** sponsor to `$ donate` to contribute with %s!\n' \
+				"$(sbin/printcash "$amount")" | sbin/say.pawn "$SRCID"
+			# the donor pays this amount, and after 50 messages and some time, Lucky comes back with a reward of 4x or a loss (instead paying you XP).
+			# $donate begins the (invisible) quest
+			# also, this should not proceed once more while there is another expedition in progress
+			true
+		# nighttime
+		elif [ "$new_evtype" == 'vampire' ]; then
+			true
+		elif [ "$new_evtype" == 'werewolf' ]; then
+			true
+		else
+			printf "Won't start event \"%s\": unhandled type\n" "$new_evtype" 1>&2
+			handled=0
+		fi
+		if [[ "$handled" -eq 1 ]]; then
+			printf '%s' "$new_evtype" > var/enc/type
+			printf "%d" "$now" > var/enc/time:start
+			printf "%d" "$SRCID" > var/enc/stream
+		fi
+	fi
+else
+	# update the channel event
+	if [ -e sbin/ch.event/"$evtype" ]; then
+		set +e
+			sbin/ch.event/"$evtype"
+			result="$?"
+		set -e
+		if [[ "$result" -eq 101 ]]; then
+			# This event is over.
+			mv -f var/enc/type{,.previous}
+			printf 'none' > var/enc/type
+			rm -rf -- var/enc/data
+			mkdir -p -- var/enc/data
+			# schedule the next event
+			now="$(date +%s)"
+			dmin="$(cat etc/enc/delay-min)"
+			dvar="$(cat etc/enc/delay-var)"
+			delay="$(sbin/rng "$dmin" "$dvar")"
+			printf "%d" "$((now + delay))" > var/enc/time:start
+		elif [[ ! "$result" -eq 0 ]]; then
+			printf 'Event "%s" returned %d\n' "$evtype" "$result" 1>&2
+		fi
+	else
+		printf "Can't update ongoing channel event %s: sbin/ch.event/%s does not exist.\n" "$evtype" "$evtype" 1>&2
+	fi
+fi
+
+sbin/dragon
+
+#
+# Parse any commands
+#
+if sbin/iscmd "$MESSAGE"; then
+	# separate leading dot or dollarsign.
+	CMDMESSAGE="$MESSAGE"
+	if grep -qE '^[\.\$][^ ]' <<< "$MESSAGE"; then
+		CMDMESSAGE="$(sed -E '1!b;s/^[\.\$]/. /' <<< "$CMDMESSAGE")"
+	fi
+	# CASE-INSENSITIVE
+	CMDNAME="$(cut -d ' ' -f 2 <<< "$CMDMESSAGE" | sbin/tolower)"
+	# validate command name (also checking for dangerous '/')
+	if [ "$CMDNAME" == '.' ] || [ "$CMDNAME" == '..' ] || grep -qE '/' <<< "$CMDNAME"; then
+		printf '`%s` is not an allowed command name.' "$CMDNAME" 1>&2
+		exit 1
+	elif [ ! -e bin/"$CMDNAME" ]; then
+		# echo "The program \`bin/$CMDNAME\` does not exist." 1>&2
+		exit 1
+	elif [ ! -x bin/"$CMDNAME" ]; then
+		# can it be run?
+		echo "Program \`bin/$CMDNAME\` is not executable." 1>&2
+		exit 1
+	elif ! sbin/hasline "$CMDNAME" etc/cmd/global && ! sbin/hasline "$SRCID" etc/cmd/stream &&
+		! sbin/hasline "$AUTHORID" etc/cmd/users && [ ! "$(cut -b 1 <<< "$SRCNAME")" == '@' ]; then
+		# Can't use the command in this context
+		echo "Can't use a command in this context" 1>&2
+		exit 1
+	else
+		# go!
+		# echo "Running program: bin/$CMDNAME"
+		# "message" is a kind of shell script!
+		CMDARGS="$(cut -d ' ' -f 3- <<< "$CMDMESSAGE")"
+		printf '%s %s\n' "$CMDNAME" "$CMDARGS" >> "$AUTHORHOME"/cmd-history
+		# invoke
+		sbin/event "$AUTHORID" COMMAND-START "$CMDNAME" "$CMDARGS"
+		# don't expand globs in CMDARGS
+		set -f
+			set +e
+				# keep these lines together
+				bin/"$CMDNAME" $CMDARGS
+				result="$?"
+				# keep these lines together
+			set -e
+		set +f
+		sbin/event "$AUTHORID" COMMAND-END "$result"
+		exit "$result"
+	fi
+fi
+
+exit 0

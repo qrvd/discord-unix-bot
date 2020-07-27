@@ -1,0 +1,17 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	printf 'Stream ID: '
+	read -r sid
+else
+	sid="$1"
+	printf 'Stream ID: %s' "$sid"
+fi
+sid="$(sbin/readnum "$0" 'stream ID' "$sid")"
+printf 'Stream: %s\n' "$(sbin/printstream "$sid")"
+while true; do
+	printf '> '
+	read -r line
+	sbin/say "$sid" <<< "$line"
+done

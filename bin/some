@@ -1,0 +1,17 @@
+#!/bin/bash
+set -ueo pipefail
+
+function saywait() {
+	sbin/say "$SRCID" <<< "$2"
+	if [[ "$1" -gt 0 ]]; then
+		sleep "$1"
+	fi
+}
+saywait 1 '*...BODY just told me* :notes:'
+saywait 3 '*the **world** is gonna roll me* :notes:'
+saywait 3 "*I ain't the sharpest tool in the shed-* :notes:"
+saywait 1 '*She was looking kinda dumb* :musical_note:'
+saywait 2 '*With her finger and her thumb* :notes:'
+saywait 2 '*In the shape of an L on her forehead!* :musical_note:'
+saywait 0 'Source: <https://www.youtube.com/watch?v=L_jWHffIx5E>'
+

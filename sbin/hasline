@@ -1,0 +1,11 @@
+#!/bin/bash
+set -ueo pipefail
+if [[ "$#" -eq 2 ]]; then
+	grep -Fxq -- "$1" "$2"
+elif [[ "$#" -eq 1 ]]; then
+	grep -Fxq -- "$1" < /dev/stdin
+else
+	printf '%s: no arguments passed' "$0" 1>&2
+	exit 1
+fi
+

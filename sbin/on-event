@@ -1,0 +1,115 @@
+#!/bin/bash
+set -ueo pipefail
+
+#
+# Given an event string, resolve any bets tied to it,
+# and pay the recipients accordingly.
+#
+#
+# Could potentially cause a long recursive chain of resolution,
+# since this is called from 'event', which itself is called
+# from both on-message and various commands under bin/ and sbin/.
+# Not sure how accurate it'll be.
+#
+
+string="$(cat /dev/stdin)"
+header="$(head -qn 1 <<< "$string")"
+
+# parse & validate the header
+authorfield="$(cut -d ' ' -f 2 <<< "$header")"
+author="$(sbin/readnum "$0" "$(printf 'author ID for event "%s"' "$string")" "$authorfield")"
+evtypename="$(cut -d ' ' -f 3 <<< "$header")"
+if ! sbin/hasline "$evtypename" etc/evtypes; then
+	printf 'on-event: Invalid event type "%s" for event:\n\t%s\n' "$evtypename" "$string" 1>&2
+	exit 1
+fi
+
+# now that it's validated, we can rest easy.
+fullev="$(cut -d ' ' -f 3- <<< "$header")"
+evtype="$(cut -d ' ' -f 3 <<< "$header")"
+evargs="$(cut -d ' ' -f 4- <<< "$header")"
+
+#
+# resolve bets
+#
+# match. see etc/bets.example
+cp -f var/bets var/bets.bak
+bets="$(cat var/bets)"
+if [ -e etc/bet.winstream ]; then
+	betstream="$(cat etc/bet.winstream)"
+else
+	betstream="$SRCID"
+fi
+betxp="$(cat etc/bet.winxp)"
+printf '%s\n' "$bets" | while read line; do
+	# which line bet that this would happen to me?
+	lnother="$(cut -d ' ' -f 5 <<< "$line")"
+	if [ "$author" != "$lnother" ]; then
+		continue
+	fi
+	lntype="$(cut -d ' ' -f 6- <<< "$line")"
+	if [ "$fullev" != "$lntype" ]; then
+		lnargs="$(cut -d ' ' -f 2- <<< "$lntype")"
+		if [ "$fullev" != "$lnargs" ]; then
+			continue
+		fi
+		# ok, the bets are probably about the same thing. opposite outcome means loss.
+		lntypename="$(cut -d ' ' -f 6 <<< "$line")"
+		# have to write it in separate if-clauses because bash isn't handling a single long expression in an intuitive way
+		if [ "$evtypename" == 'QUEST-COMPLETE' ] && [ "$lntypename" == 'QUEST-FAIL' ]; then
+			outcome='LOSE'
+		elif [ "$evtypename" == 'QUEST-FAIL' ] && [ "$lntypename" == 'QUEST-COMPLETE' ]; then
+			outcome='LOSE'
+		elif [ "$evtypename" == 'BET-WIN' ] && [ "$lntypename" == 'BET-LOSE' ]; then
+			outcome='LOSE'
+		elif [ "$evtypename" == 'BET-LOSE' ] && [ "$lntypename" == 'BET-WIN' ]; then
+			outcome='LOSE'
+		else
+			# unknown
+			printf '%s Unhandled bet comparison: "%s" vs "%s"\n' "$(date +%s)" "$string" "$line" >> var/on-event.log
+			continue
+		fi
+	else
+		outcome='WIN'
+	fi
+	lnauth="$(cut -d ' ' -f 3 <<< "$line")"
+	lnamt="$(cut -d ' ' -f 4 <<< "$line")"
+	reward="$(( "$lnamt" * "$(cat etc/bet.winratio)" ))"
+	lnbetid="$(cut -d ' ' -f 1 <<< "$line")"
+	# announce before applying (so that *consequential* events are printed after it)
+	{
+		printid="Bet [$(cut -b 1-3 <<< "$lnbetid")]"
+		printreward="$(sbin/printcash "$reward")"
+		printmention="$(sbin/mention "$lnauth")"
+		if [ "$outcome" == 'WIN' ]; then
+			printf '%s **%s won!** Reward: %s, **+%dXP**.' \
+				"$printmention" "$printid" "$printreward" "$betxp"
+		elif [ "$outcome" == 'LOSE' ]; then
+			printf '%s **%s lost!** The reward of %s goes to %s!' \
+				"$printmention" "$printid" "$printreward" "$(sbin/mention "$lnother")"
+		else
+			printf '%s Unknown bet outcome "%s": "%s" vs "%s"\n' "$(date +%s)" "$outcome" "$string" "$line" >> var/on-event.log
+			exit 1
+		fi
+		printf '```\n%s```' "$(sbin/printbet "$line")"
+	} | sbin/say "$betstream"
+	# now do the actual event logging
+	sbin/event "$lnauth" BET-"$outcome" "$lnbetid"
+	if [ "$outcome" == 'WIN' ]; then
+		# transfer as late as possible, so that the transfer event happens after the bet result event
+		# who knows what the recursion would do though... but i want this chronology
+		sbin/transfer-balance "$BOTID" "$lnauth" "$reward"
+
+		# add xp
+		sbin/modify-xp "$lnauth" "$betxp"
+		if sbin/update-level "$lnauth"; then
+			sbin/on-levelup "$lnauth" "$betstream"
+		fi
+	elif [ "$outcome" == 'LOSE' ]; then
+		sbin/transfer-balance "$BOTID" "$lnother" "$reward"
+	fi
+	# remove this bet from the file (after the "event" so that on-event code may read what the bet was)
+	# in other words, *bets on this bet* may succeed or fail.
+	sed -i "/$lnbetid/d" var/bets
+done
+

@@ -1,0 +1,6 @@
+#!/bin/bash
+set -ueo pipefail
+
+amount="$(sbin/readnum.neg "$0" 'amount' "$1")"
+# printf '**%s**:moneybag:' "$amount"
+printf '**%s**💰' "$amount"

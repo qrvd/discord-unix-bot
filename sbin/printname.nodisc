@@ -1,0 +1,3 @@
+#!/bin/bash
+set -ueo pipefail
+. sbin/printname "$@" < /dev/stdin | cut -d '#' -f 1

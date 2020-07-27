@@ -1,0 +1,3 @@
+#!/bin/bash
+set -ueo pipefail
+sed -E 's/^/> /g' < /dev/stdin

@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ueo pipefail
+
+printf 'The ID of this channel is `%s`.' "$SRCID"
+

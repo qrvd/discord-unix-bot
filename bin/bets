@@ -1,0 +1,58 @@
+#!/bin/bash
+set -ueo pipefail
+
+ongoing_quests="$(sbin/get-ongoing-quests)"
+quest_count="$(wc -l <<< "$ongoing_quests")"
+bet_count="$(wc -l var/bets | cut -d ' ' -f 1)"
+total="$(( "$quest_count" + "$bet_count" ))"
+cntwidth="$(wc -c <<< "$total")"
+
+# Show them all
+pagesize="$total"
+beginning=1
+
+printf 'Possible bets:```'
+count=1
+brief=1
+{
+	# convert both files to the format "$authid $entrytext"
+	echo "$ongoing_quests" | while read ln; do
+		authid="$(cut -d ' ' -f 1 <<< "$ln")"
+		quest="$(cut -d ' ' -f 2 <<< "$ln")"
+		if [[ "$brief" -eq 1 ]]; then
+			printf '%s Quest %d\n' "$authid" "$quest"
+		else
+			printf '%s Quest %d: %s\n' "$authid" "$quest" "$(sbin/getquest.short "$quest")"
+		fi
+	done
+	cat var/bets | while read ln; do
+		authid="$(cut -d ' ' -f 3 <<< "$ln")"
+		printid="$(cut -d ' ' -f 1 <<< "$ln" | cut -b 1-3)"
+		if [[ "$brief" -eq 1 ]]; then
+			# printf '%s Bet [%s]\n' "$authid" "$printid"
+			printf '%s Bet [%s]: %s\n' "$authid" "$printid" "$(sbin/printbet.short "$ln" | sed -E "s/^Bet //g")"
+		else
+			printf '%s Bet [%s]: %s\n' "$authid" "$printid" "$(sbin/printbet.short "$ln" | sed -E "s/^Bet //g")"
+		fi
+	done
+} | while read ln; do
+	if [[ "$count" -lt "$beginning" ]]; then
+		count="$((count + 1))"
+		continue
+	elif [[ "$((count - beginning))" -gt "$pagesize" ]]; then
+		continue
+	fi
+	authid="$(cut -d ' ' -f 1 <<< "$ln")"
+	msg="$(cut -d ' ' -f 2- <<< "$ln")"
+	dispname="$(sbin/printname.nodisc "$authid" '???')"
+	if [[ "$((count % 2))" -eq 0 ]]; then
+		sep='+'
+	else
+		sep='|'
+	fi
+	fmt="$(printf '\\n%% %dd %c %%s [by %%s]' "$cntwidth" "$sep")"
+	printf "$fmt" "$count" "$msg" "$dispname"
+	count="$((count + 1))"
+done
+printf '```'
+echo 'To bet on an outcome, use `$ bet`.'

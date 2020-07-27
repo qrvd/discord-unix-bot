@@ -1,0 +1,13 @@
+#!/bin/bash
+set -ueo pipefail
+
+id="$1"
+name="$2"
+
+# invalid characters must be purged!
+rep='_'
+name="$(sed -E "s|[\./]|$rep|g;s/^(\.+)/$rep/g" <<< "$name")"
+
+mkfifo dev/id/"$id"
+ln -sf -- id/"$id" dev/"$name"
+

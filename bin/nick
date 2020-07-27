@@ -1,0 +1,27 @@
+#!/bin/bash
+set -ueo pipefail
+
+function usage() {
+	printf '`nick` is for setting your Kanna nickname, which is used to refer to you in various commands.\n'
+	printf 'Example: `$ nick JoJo` will set your Kanna nickname to `JoJo`.\n'
+	exit 1
+}
+
+if [[ "$#" -eq 0 ]]; then
+	if [ -e "$AUTHORHOME"/nick ]; then
+		mv -f "$AUTHORHOME"/nick "$AUTHORHOME"/nick.bak
+		printf 'Removed your Kanna nickname.\n'
+	else
+		usage
+	fi
+elif [[ "$#" -eq 1 ]]; then
+	newnick="$(tr \` \' <<< "$1")"
+	if [ -e "$AUTHORHOME"/nick ]; then
+		mv -f "$AUTHORHOME"/nick "$AUTHORHOME"/nick.bak
+	fi
+	printf '%s' "$newnick" > "$AUTHORHOME"/nick
+	printf 'Set your Kanna nickname to `%s`.\n' "$newnick"
+else
+	usage
+fi
+

@@ -1,0 +1,28 @@
+#!/bin/bash
+set -ueo pipefail
+
+# validate destination
+if [[ "$#" -eq 0 ]]; then
+	printf 'Pawn always needs a destination' 1>&2
+	exit 1
+fi
+dest="$(sbin/readnum "$0" 'stream ID' "$1")"
+
+# validate message
+msg="$(cat /dev/stdin)"
+if [ -z "$(sed -E "s/[\s\t\r ]+//g" <<< "$msg")" ]; then
+	printf 'Cancel send to %s: cannot send an empty message.\n' "$dest" 1>&2
+	exit 2
+fi
+
+botid="$(cat var/bot/pawn.id)"
+
+# send to socket
+addr="$(cat etc/bot/pawn.addr)"
+port="$(cat etc/bot/pawn.port)"
+{
+	printf '%s\x00' "$dest"
+	printf '%s\x00' "$(wc -c <<< "$msg")"
+	printf '%s' "$msg"
+} >> /dev/tcp/"$addr"/"$port"
+

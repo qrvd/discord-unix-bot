@@ -1,0 +1,9 @@
+#!/bin/bash
+set -ueo pipefail
+
+# mee6
+extra=10
+echo -n "$(( 15 + (RANDOM % (extra + 1)) ))"
+
+# me
+# echo -n "$(( 10 + ( RANDOM % 5 ) ))"

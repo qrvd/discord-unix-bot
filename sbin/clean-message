@@ -1,0 +1,6 @@
+#!/bin/bash
+set -ueo pipefail
+
+# left end of pipe: strip input of unnecessary whitespace/newlines (reformat as 'a b c d e f')
+# right end of pipe: remove Yui's special byte sequence, so we can read Yui's commands.
+sed -E "s/[\n\t\r]/ /g;s/\s{2,}/ /g" < /dev/stdin | sed -E '1!b;s/^\xe1\xa0\x8e//'

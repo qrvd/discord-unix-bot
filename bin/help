@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ueo pipefail
+
+echo 'XP: `xp`, `rank`'
+echo 'Money: `bank`, `put`, `take`, `money`/`balance`'
+echo 'Quests: `timely`, `promise`/`quest`, `quests`'
+echo 'Gambling: `bet`, `betflip`, :game_die:'
+# echo 'Gambling: `bet`, `lottery`, `betflip`, :game_die:'
+# echo 'Items: `inventory`'
+

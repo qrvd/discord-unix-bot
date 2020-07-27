@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ueo pipefail
+
+find {s,}bin etc/quest -type f -exec grep --color=auto -R "$@" -- {} +
+

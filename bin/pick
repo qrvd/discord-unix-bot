@@ -1,0 +1,58 @@
+#!/bin/bash
+set -ueo pipefail
+
+et="$(cat var/drop/event-type)"
+if [ "$et" != 'drop' ] && [ "$et" != 'xpdrop' ]; then
+	# wrong event
+	exit 10
+elif [ -e var/drop/has-picked ]; then
+	# already picked
+	exit 50
+elif [ "$SRCID" != "$(cat var/drop/stream)" ]; then
+	# wrong stream
+	exit 100
+fi
+
+userid="$AUTHORID"
+sid="$SRCID"
+amt="$(cat var/drop/amount)"
+
+# announce it
+if [ "$et" == 'drop' ]; then
+	printf '**%s** picked the %s!\n' \
+		"$(sbin/mention "$userid")" "$(sbin/printcash "$amt")" | sbin/say "$sid"
+elif [ "$et" == 'xpdrop' ]; then
+	printf '**%s** earned the **%sXP**!\n' \
+		"$(sbin/mention "$userid")" "$amt" | sbin/say "$sid"
+else
+	printf 'Unknown drop type %s\n' "$et" 1>&2
+	exit 1
+fi
+
+# disable the drop
+touch var/drop/has-picked
+
+# log the event
+sbin/event "$userid" PICK
+
+# get the reward
+if [ "$et" == 'drop' ]; then
+	sbin/transfer-balance "$BOTID" "$userid" "$amt"
+elif [ "$et" == 'xpdrop' ]; then
+	# add xp
+	sbin/modify-xp "$AUTHORID" "$amt"
+	if sbin/update-level "$AUTHORID"; then
+		sbin/on-levelup "$lnauth" "$betstream"
+	fi
+else
+	printf 'Unknown drop type %s\n' "$et" 1>&2
+	exit 1
+fi
+
+
+if [ "$userid" == "$(cat var/bot/pawn.id)" ]; then
+	touch var/drop/lucky-picked
+fi
+
+# Remove the old message
+# sbin/delmsg "$(cat var/drop/drop.message-id)"

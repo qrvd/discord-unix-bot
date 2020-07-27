@@ -1,0 +1,6 @@
+#!/bin/bash
+set -ueo pipefail
+
+find home/ -mindepth 1 -maxdepth 1 -type d \
+	-exec rsync -r --ignore-existing -v etc/user.template/ {} ';'
+

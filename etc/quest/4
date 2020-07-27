@@ -1,0 +1,35 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ ! "$QUESTTIME" -lt 604800 ]]; then
+	# nice nice nice nice nice nice!
+	echo 'Good job completing the Ardit challenge!'
+	sbin/transfer-balance "$BOTID" "$AUTHORID" 5000
+	echo 'Your reward of $5000 has been awarded!'
+	exit 101
+fi
+
+if [ -z "$RAWMESSAGE" ] || [ -z "$MESSAGE" ]; then
+	exit 0
+fi
+
+if sbin/iscmd "$RAWMESSAGE" || sbin/iscmd "$MESSAGE"; then
+	exit 0
+fi
+
+# Ignore "command-looking" messages.
+# I'm just being nice.
+if [ -n "$(cut -b 1 <<< "$MESSAGE" | grep -Ei -- "^(yui |[\-41\~\!\.?\$@])")" ]; then
+	exit 0
+fi
+unquoted="$(sbin/clean-message <<< "$(grep -vE '^\s*> ' <<< "$RAWMESSAGE")")"
+swears="$(cat etc/swearwords)"
+sbin/tolower <<< "$unquoted" | sed -E "s/$/ /g" | while read -r -d ' ' word; do
+	# unquote
+	word="$(tr -d "'\"" <<< "$word")"
+	if sbin/hasline "$word" <<< "$swears"; then
+		exit 202
+	fi
+done
+
+exit 0

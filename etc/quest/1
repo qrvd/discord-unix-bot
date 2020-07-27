@@ -1,0 +1,34 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ -z "$RAWMESSAGE" ] || [ -z "$MESSAGE" ]; then
+	exit 0
+fi
+
+if sbin/iscmd "$RAWMESSAGE" || sbin/iscmd "$MESSAGE"; then
+	exit 0
+fi
+
+# count
+cntpath="$QUESTHOME"/msg-count
+if [ -e "$cntpath" ]; then
+	cnt="$(cat "$cntpath")"
+else
+	cnt=0
+fi
+
+# complete: do nothing, well, except talking each day
+if [[ ! "$QUESTTIME" -lt 604800 ]]; then
+	if [[ "$cnt" -lt 7 ]]; then
+		exit 202
+	fi
+	# nice nice nice nice nice nice!
+	sbin/transfer-balance "$BOTID" "$AUTHORID" 700
+	echo 'Your reward of $700 has been awarded!'
+	exit 101
+fi
+
+printf '%d' "$(( "$cnt" + 1 ))" > "$QUESTHOME"/msg-count
+
+exit 0
+

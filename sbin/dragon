@@ -1,0 +1,23 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ -z "$RAWMESSAGE" ] || sbin/iscmd "$MESSAGE"; then
+	exit 0
+fi
+
+function say() {
+	printf "$@" | sbin/say "$SRCID"
+}
+
+if [ "$MESSAGE" == 'う' ]; then
+	say ':egg:'
+elif [ "$MESSAGE" == 'りう' ]; then
+	say ':hatching_chick:'
+elif [ "$MESSAGE" == 'る' ]; then
+	say ':hatched_chick:'
+elif [ "$MESSAGE" == 'りゅう' ]; then
+	say ':dragon:'
+elif [ "$MESSAGE" == '竜' ]; then
+	say ':dragon_face:'
+fi
+

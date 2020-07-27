@@ -1,0 +1,4 @@
+#!/bin/bash
+set -ueo pipefail
+echo "Die roll: **$(( 1 + ( RANDOM % 6 ) ))**."
+

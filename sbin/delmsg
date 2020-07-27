@@ -1,0 +1,14 @@
+#!/bin/bash
+set -ueo pipefail
+
+streamid="$(sbin/readnum "$0" 'stream id' "$1")"
+msgid="$(sbin/readnum "$0" 'message id' "$2")"
+
+addr="$(cat etc/speakaddr)"
+port="$(cat etc/speakport)"
+{
+	printf 'delete\x00'
+	printf '%s\x00' "$streamid"
+	printf '%s\x00' "$msgid"
+} >> /dev/tcp/"$addr"/"$port"
+

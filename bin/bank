@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ueo pipefail
+
+printf '**How to use the bank**:\n'
+printf 'Put money into your bank account: `$ put AMOUNT`\n'
+printf 'Take from your bank account: `$ take AMOUNT`\n'
+printf 'For example: `$ put 50` will put **50** into your bank account,\n'
+printf 'and `$ take 35` will take **35** out of your bank account.\n'
+printf '%s\n' "$(sbin/banktell "$AUTHORID")"
+

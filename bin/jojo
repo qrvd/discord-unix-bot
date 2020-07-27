@@ -1,0 +1,8 @@
+#!/bin/bash
+set -ueo pipefail
+
+{
+	echo 'Yare Yare Daze!'
+	echo 'Wryyyyyyyy!'
+	echo "Oh, you're approaching me? You dare approach this ~~Dio~~ Kanna?"
+} | shuf -n 1

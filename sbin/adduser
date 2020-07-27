@@ -1,0 +1,11 @@
+#!/bin/bash
+set -ueo pipefail
+uid="$(sbin/readnum "$0" "user id" "$1")"
+homedir=home/"$uid"
+if [ -e "$homedir" ]; then
+	printf 'adduser: home directory for id "%s" already exists.\n' "$1" 1>&2
+	exit 1
+fi
+mkdir -p home
+cp -r etc/user.template "$homedir"
+printf '%s' "$uid" > "$homedir"/id

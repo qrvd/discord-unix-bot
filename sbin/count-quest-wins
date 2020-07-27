@@ -1,0 +1,23 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -ne 2 ]]; then
+	printf '%s: usage: %s author-id quest-name (passed %s)\n' "$0" "$0" "$@" 1>&2
+	exit 1
+fi
+aid="$(sbin/readnum "$0" 'author ID' "$1")"
+if [ ! -e home/"$aid" ]; then
+	printf '%s: author ID "%s" is not registered\n' "$0" "$aid" 1>&2
+	exit 1
+fi
+q="$(sbin/readnum "$0" 'quest ID' "$2")"
+auhome=home/"$aid"/
+if [ -e "$auhome"/scroll.completed ]; then
+	# Allow grep to fail finding "$q" (wins will be set to 0)
+	set +e
+		wins="$(grep -cFx -- "$q" "$auhome"/scroll.completed)"
+	set -e
+else
+	wins=0
+fi
+printf '%d' "$wins"

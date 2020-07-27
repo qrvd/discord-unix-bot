@@ -1,0 +1,17 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ "$#" == '0' ]; then
+	printf 'Random number: `%s`\n' "$RANDOM"
+elif [ "$#" == '1' ]; then
+	max="$(sbin/readnum.user "$0" 'maximum' "$1")"
+	if [ "$max" == '0' ] || [[ "$max" -lt 0 ]]; then
+		printf '`%s` is not a valid maximum!' "$max"
+		exit 1
+	fi
+	printf 'Random number up to %d: `%s`\n' "$max" "$((1 + RANDOM % max))"
+elif [ "$#" == '2' ]; then
+	true
+else
+	true
+fi

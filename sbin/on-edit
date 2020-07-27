@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ueo pipefail
+
+# an edit can betray a quest
+

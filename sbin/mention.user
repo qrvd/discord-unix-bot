@@ -1,0 +1,10 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	echo "Mention which user ID?"
+	exit 1
+fi
+uid="$(sbin/readnum "$0" 'user ID' "$1")"
+printf '<@!%s>' "$uid"
+

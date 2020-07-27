@@ -1,0 +1,12 @@
+#!/bin/bash
+set -ueo pipefail
+
+if grep -xqE "<@![0-9]+>" <<< "$1"; then
+	printf "%s" "$(echo "$1" | cut -b 4- | rev | cut -b 2- | rev)"
+elif grep -xqE "<@[0-9]+>" <<< "$1"; then
+	printf "%s" "$(echo "$1" | cut -b 3- | rev | cut -b 2- | rev)"
+else
+	echo "This is not a valid @-mention: $1" 1>&2
+	exit 1
+fi
+

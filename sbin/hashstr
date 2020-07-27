@@ -1,0 +1,13 @@
+#!/bin/bash
+set -ueo pipefail
+{
+	if [[ "$#" -eq 0 ]]; then
+		sha256sum < /dev/stdin
+	elif [[ "$#" -eq 1 ]]; then
+		sha256sum <<< "$1"
+	else
+		printf '%s: invalid usage (%d args): "%s"\n' 1>&2 "$0" "$#" "$@" 1>&2
+		exit 1
+	fi
+} | cut -d ' ' -f 1
+

@@ -1,0 +1,25 @@
+#!/bin/bash
+set -ueo pipefail
+
+echo "Available weekly quests:"
+echo -n '```'
+count=1
+scr="$(sbin/listquests "$AUTHORID")"
+cat etc/quests | while read ln; do
+	if [ -z "$scr" ] || [ ! -e "$AUTHORHOME"/quest/"$count" ]; then
+		echo -n "($count)"
+	else
+		echo -n "[$count]"
+	fi
+	printf ' %s' "$ln"
+	wins="$(sbin/count-quest-wins "$AUTHORID" "$count")"
+	if [ "$wins" != '0' ]; then
+		printf ', %d🏆' "$wins"
+	fi
+	echo
+	count=$((count+1))
+done
+echo -n '```'
+echo 'Remember to **talk every day** to complete your quest!'
+echo 'To choose a quest, use the `$ promise` command.'
+

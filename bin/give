@@ -1,0 +1,56 @@
+#!/bin/bash
+set -ueo pipefail
+
+function usage() {
+	echo "usage: \`give AMOUNT @USER\`"
+	exit 1
+}
+
+if [[ "$#" -lt 2 ]]; then
+	usage
+fi
+
+# order doesn't actually matter, so long as the 2 things are here
+amt="$1"
+dst="$2"
+if [ "$(cut -b 1-2 <<< "$amt")" == "<@" ]; then
+	tmp="$amt"
+	amt="$dst"
+	dst="$tmp"
+	printf 'Interpreting your command as `give %s %s`.' "$amt" "$dst"
+fi
+
+# read and validate user ID
+userid="$(sbin/read-mention "$dst")"
+if [ "$AUTHORID" == "$userid" ]; then
+	echo "You already have that money, LOL!"
+	exit 1
+elif [ ! -e home/"$userid" ]; then
+	echo "That person is not registered! To register a person, just have them talk in any channel."
+	exit 1
+fi
+
+# read and validate amount
+amtstr="$(tr -d \$ <<< "$amt")"
+amt="$(sbin/readnum "$0" 'amount to give' "$amtstr")"
+if [[ "$amt" -gt "$(cat "$AUTHORHOME"/bal)" ]]; then
+	echo "Sorry! You can't transfer more than you have!"
+	echo "Check how much money you have with \`$ balance\`."
+	exit 1
+fi
+
+# response
+function prefix() {
+	printf '**%s:** ' "$(sbin/printname "$AUTHORID")"
+}
+
+prefix
+printf 'Transferring %s...\n' "$(sbin/printcash "$amt")"
+
+# transfer
+sbin/transfer-balance "$AUTHORID" "$userid" "$amt"
+
+# response
+prefix
+printf 'Transferred %s to **%s**.\n' "$(sbin/printcash "$amt")" "$(sbin/printname "$userid" 'that user')"
+

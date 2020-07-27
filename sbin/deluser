@@ -1,0 +1,11 @@
+#!/bin/bash
+set -ueo pipefail
+uid="$(sbin/readnum "$0" "user id" "$1")"
+homedir=home/"$uid"
+if [ ! -e "$homedir" ]; then
+	echo "error: there is no home folder for user $1" 1>&2
+	exit 1
+fi
+rm -rv -- "$homedir"
+unset homedir
+

@@ -1,0 +1,28 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	exit 1
+fi
+
+msg="$1"
+
+# emptys get nothing.
+if [ -z "$(sed -E 's/[ \t\n\r]//g' <<< "$msg")" ]; then
+	exit 1
+fi
+
+# using the prefix?
+prefix="$(cut -b 1 <<< "$msg")"
+if [ "$prefix" == '$' ] || [ "$prefix" == '.' ]; then
+	exit 0
+fi
+
+# mentioning, or using kanna's name directly?
+word="$(cut -d ' ' -f 1 <<< "$msg" | sbin/tolower)"
+lowword="$(sbin/tolower <<< "$word")"
+if [ "$lowword" == 'kanna' ] || [ "$lowword" == 'kenne' ] || [ "$word" == "$(sbin/mention "$(cat root/id)")" ]; then
+	exit 0
+fi
+
+exit 1

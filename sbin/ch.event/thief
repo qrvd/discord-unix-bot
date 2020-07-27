@@ -1,0 +1,19 @@
+#!/bin/bash
+set -ueo pipefail
+
+# complete!
+if [ -e var/drop/thief.caught ]; then
+	rm -f var/drop/thief.caught
+	exit 101
+fi
+
+# cancel
+now="$(date +%s)"
+max_age=600
+if [[ ! "$(( "$(cat var/drop/drop-time)" + max_age ))" -gt "$now" ]]; then
+	echo 'The thief escaped!' | sbin/say.pawn "$(cat var/drop/stream)"
+	exit 101
+fi
+
+exit 0
+

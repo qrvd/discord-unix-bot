@@ -1,0 +1,13 @@
+#!/bin/bash
+set -ueo pipefail
+
+# argument declarations must be consistent between files readnum & readnum.user & readnum.neg
+scriptpath="$1"
+name="$2"
+str="$3"
+
+if grep -qvEx '[0-9]+' <<< "$str"; then
+	printf '%s: invalid %s: %s\n' "$scriptpath" "$name" "$str" 1>&2
+	exit 1
+fi
+printf '%s' "$str"

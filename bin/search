@@ -1,0 +1,26 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ "$(cat var/drop/event-type)" != 'thief' ]; then
+	# wrong event
+	exit 55
+elif [ -e var/drop/thief.revealed ]; then
+	exit 66
+elif [ -e var/drop/thief.caught ]; then
+	exit 77
+fi
+
+author="$(sbin/printname "$AUTHORID")"
+dropstream="$(cat var/drop/stream)"
+if [ "$SRCID" == "$(cat var/drop/thief.right)" ]; then
+	touch var/drop/thief.revealed
+	printf '\u200c' | sbin/say.thief "$SRCID"
+	sleep 2
+	printf 'Shh, there is the thief! When you are ready, use the command `$ catch` to catch him!\n' | sbin/say.pawn "$SRCID"
+elif sbin/hasline "$SRCID" var/drop/thief.wrong || [ "$SRCID" == "$dropstream" ]; then
+	printf "**%s**, the thief isn't here. Let's go look elsewhere!\n" \
+		"$author" | sbin/say.pawn "$SRCID"
+	printf "The channel list is in %s.\n" \
+		"$(sbin/mention.stream "$dropstream")" | sbin/say.pawn "$SRCID"
+fi
+

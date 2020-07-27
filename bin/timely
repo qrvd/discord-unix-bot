@@ -1,0 +1,26 @@
+#!/bin/bash
+set -ueo pipefail
+
+today="$(date --date='today 00:00' +%s)"
+tml="$(cat "$AUTHORHOME"/timely)"
+if [[ "$tml" -lt "$today" ]]; then
+	amt="$(cat etc/timely-amount)"
+	prtamt="$(sbin/printcash "$amt")"
+	printf 'Transferring %s...' "$prtamt" | sbin/say "$SRCID"
+	sbin/event "$AUTHORID" TIMELY "$amt"
+	sbin/transfer-balance "$BOTID" "$AUTHORID" "$amt"
+	echo "$today" > "$AUTHORHOME"/timely
+	sbin/fmt '~bn: You have received your daily %s!\n' "$AUTHORID" "$prtamt"
+else
+	# hardcoded delay of 1 day
+	tomorrow="$(date --date='tomorrow 00:00' +%s)"
+	datestr="$(date --date="@$tomorrow" +'%B %d at %H:%M %Z')"
+	printf 'You can get your next daily reward on, or after:'
+	sbin/fence echo "$datestr"
+	if [ -e var/clock/id ] ; then
+		printf 'The current time is shown by the clock %s in the sidebar.' "$(sbin/mention "$(cat var/clock/id)")"
+	else
+		printf 'Check the time by using `$time`.'
+	fi
+fi
+

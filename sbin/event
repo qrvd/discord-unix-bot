@@ -1,0 +1,62 @@
+#!/bin/bash
+set -ueo pipefail
+#
+# It's best to announce an event *before* running this program,
+# because the consequences of an event may themselves print more output.
+#
+
+authorid="$(sbin/readnum "$0" "$(printf 'author id for event "%s"' "$@")" "$1")"
+evtype="$2"
+if ! sbin/hasline "$evtype" etc/evtypes; then
+	printf 'event: Invalid event type "%s" when parsing event args:\n\t"%s"\n' "$evtype" "$@" 1>&2
+	exit 1
+fi
+
+evtime="$(date +%s)"
+
+# pretty log (can become wrong)
+{
+	ev_idx="$(grep -n "$evtype" etc/evtypes | cut -d ':' -f 1)"
+	pretty_evtype="$(head -qn "$ev_idx" < etc/evtypes.pretty | tail -qn 1)"
+	printf '%s %s %s' "$(date --date="@$evtime" +'on %Y-%m-%d %H:%M:%S')" \
+		"$(sbin/printname "$authorid")" "$pretty_evtype"
+	if [[ "$#" -gt 2 ]]; then
+		shift 2
+		previous='neither'
+		for s in "$@"; do
+			if [ -z "$s" ]; then
+				continue
+			fi
+			# find out what this string most likely means
+			if [ -d home/"$s" ] && [ -e dev/id/"$s" ]; then
+				pretty_s="<ambiguous:$s>"
+				current='ambiguous'
+			elif [ -d home/"$s" ]; then
+				pretty_s="$(sbin/printname "$s")"
+				current='user'
+			elif [ -e dev/id/"$s" ]; then
+				pretty_s="the channel $(sbin/printstream "$s")"
+				current='channel'
+			else
+				pretty_s="$s"
+				current='neither'
+			fi
+			if [ "$previous" == "$current" ] && [ "$previous" != 'neither' ]; then
+				printf ' and'
+			fi
+			printf ' %s' "$pretty_s"
+			previous="$current"
+		done
+	fi
+	printf '\n'
+} >> var/log/events.pretty
+
+# true log
+{
+	printf '%d %s %s' "$evtime" "$authorid" "$evtype"
+	if [[ "$#" -gt 0 ]]; then
+		printf ' %s' "$@"
+	fi
+	printf '\n'
+} | tee --append var/log/events.pure | sbin/on-event
+

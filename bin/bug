@@ -1,0 +1,13 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	echo "This command is for reporting any problems with the bot."
+	printf 'To use it, simply type `$ bug MESSAGE` to notify Cloudy about it.\n'
+	exit 1
+fi
+
+bugmsg="$(printf '%s: %s' "$(sbin/printname "$AUTHORID")" "$RAWMESSAGE")"
+bugdate="$(date +'on %Y-%m-%d %H:%M:%S')"
+printf '%s: %s\n' "$bugdate" "$bugmsg" | tee --append var/log/bugs 1>&2
+

@@ -1,0 +1,38 @@
+#!/bin/bash
+set -ueo pipefail
+
+line="$1"
+if [ -z "$line" ]; then
+	printf 'printbet: passed empty line\n' 1>&2
+	exit 1
+fi
+
+lnamt="$(cut -d ' ' -f 4 <<< "$line")"
+lnother="$(cut -d ' ' -f 5 <<< "$line")"
+lntype="$(cut -d ' ' -f 6 <<< "$line")"
+msgname="$(sbin/printname "$lnother")"
+if [ "$lntype" == "QUEST-COMPLETE" ]; then
+	betcategory='quest'
+	msgrslt='succeeds'
+	msgid="#$(cut -d ' ' -f 7- <<< "$line")"
+elif [ "$lntype" == "QUEST-FAIL" ]; then
+	betcategory='quest'
+	msgrslt='fails'
+	msgid="#$(cut -d ' ' -f 7- <<< "$line")"
+elif [ "$lntype" == "BET-WIN" ]; then
+	betcategory='bet'
+	msgrslt='wins'
+	# take the first few
+	msgid="[$(cut -d ' ' -f 7 <<< "$line" | cut -b 1-3)]"
+elif [ "$lntype" == "BET-LOSE" ]; then
+	betcategory='bet'
+	msgrslt='loses'
+	# take the first few
+	msgid="[$(cut -d ' ' -f 7 <<< "$line" | cut -b 1-3)]"
+else
+	printf 'print-bet: unknown bet type for reward message: "%s"\n' "$line" 1>&2
+fi
+
+printf 'Bet %s that %s %s %s %s' \
+	"$(sbin/printcash "$lnamt")" "$msgname" "$msgrslt" "$betcategory" "$msgid"
+

@@ -1,0 +1,19 @@
+#!/bin/bash
+set -ueo pipefail
+
+# argument declarations must be constant between files readnum & readnum.user
+# scriptpath="$1"
+name="$2"
+str="$3"
+
+set +e
+	numstr="$(sbin/readnum "$@" 2>/dev/null)"
+	rslt="$?"
+set -e
+
+if [[ ! "$rslt" -eq 0 ]]; then
+	printf 'Sorry! `%s` is not a valid %s. Please try again.\n' "$name" "$str"
+	exit 1
+fi
+
+printf '%s' "$numstr"

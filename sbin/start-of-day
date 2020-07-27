@@ -1,0 +1,16 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ "$#" == '0' ]; then
+	unixtime="$(date +%s)"
+elif [ "$#" == '1' ]; then
+	unixtime="$(sbin/readnum "$0" 'unix time' "$1")"
+else
+	printf '%s: Invalid usage "%s %s"\n' "$0" "$0" "$@" 1>&2
+	exit 1
+fi
+full_date="$(date --date="@$unixtime" +'%Y-%m-%d %Z')"
+ymd="$(cut -d ' ' -f 1 <<< "$full_date")"
+tz="$(cut -d ' ' -f 2 <<< "$full_date")"
+start_of_day_unix="$(date --date="$ymd 00:00:00 $tz" +%s)"
+printf '%s' "$start_of_day_unix"

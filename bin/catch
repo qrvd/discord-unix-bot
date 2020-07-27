@@ -1,0 +1,43 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ "$(cat var/drop/event-type)" != 'thief' ]; then
+	# wrong event
+	exit 22
+elif [ -e var/drop/thief.caught ]; then
+	exit 33
+elif [ ! -e var/drop/thief.revealed ]; then
+	exit 44
+fi
+
+author="$(sbin/printname "$AUTHORID")"
+dropstream="$(cat var/drop/stream)"
+if [ "$SRCID" == "$(cat var/drop/thief.right)" ]; then
+	touch var/drop/thief.caught
+	printf "**%s** caught the thief in %s! The search is over!" \
+		"$author" "$(sbin/mention.stream "$SRCID")" | sbin/say.pawn "$dropstream"
+	printf "Got you, thief! Give me my money back!\n" | sbin/say.pawn "$SRCID"
+	sleep 2
+	printf "Huh, what? How'd you find me??\nI'm not giving it to you anyway!" | sbin/say.thief "$SRCID"
+	sleep 2
+	printf "Yes you are, thief! **%s** and I are here!\n*we both jump the thief*\n" "$author" | sbin/say.pawn "$SRCID"
+	sleep 3
+	exclamation="$(shuf -n 1 < etc/thief.exclamations)"
+	printf "**What? Noooo!!**\n...*%s!* If it weren't for **%s**, I'd have been *rich!*\n" \
+		"$exclamation" "$author" | sbin/say.thief "$SRCID"
+	sleep 3
+	myid="$(cat var/bot/pawn.id)"
+	sbin/transfer-balance "$(cat var/bot/thief.id)" "$myid" "$(cat var/drop/thief.stolen-balance)"
+	mybal="$(cat home/"$myid"/bal)"
+	reward="$(cat var/drop/thief.reward)"
+	printf "...\nLooks like the cops carried the thief away.\nThanks to you, %s, I got my %s back! Please take my reward of %s.\n" \
+		"$(sbin/mention "$AUTHORID")" "$(sbin/printcash "$mybal")" "$(sbin/printcash "$reward")" | sbin/say.pawn "$SRCID"
+	sbin/transfer-balance "$myid" "$AUTHORID" "$reward"
+	printf '**%s** transferred %s to **%s**.\n' "$(sbin/printname "$(cat var/bot/pawn.id)")" "$(sbin/printcash "$reward")" "$author" \
+		| sbin/say "$SRCID"
+	sleep 2
+	printf "Thanks for the help. See you another time!" | sbin/say.pawn "$SRCID"
+elif sbin/hasline "$SRCID" var/drop/thief.wrong || [ "$SRCID" == "$dropstream" ]; then
+	printf '**%s**, Did you mean to use `$ search`?\n' "$author" | sbin/say.pawn "$SRCID"
+fi
+

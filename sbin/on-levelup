@@ -1,0 +1,26 @@
+#!/bin/bash
+set -ueo pipefail
+
+userid="$1"
+dst="$2"
+lvl="$(cat home/"$userid"/level)"
+
+#
+# For now, say nothing - mee6 already does level-ups.
+#
+{
+	if [ "$userid" != "$(cat root/id)" ]; then
+		# echo -n "$(sbin/mention "$userid") yare yare, you just reached level **$lvl** daze!"
+		echo -n "$(sbin/mention "$userid") holy moly, you just leveled up nerd!~"
+		# echo -n "Congratulations $(sbin/mention "$userid"), you have reached level **$lvl**\!"
+	else
+		echo -n "holy moly, i just leveled up!"
+	fi
+	if [ -e etc/dances ]; then
+		printf ' %s' "$(shuf -n 1 < etc/dances)"
+	fi
+} | sbin/say "$dst"
+
+# log the event
+sbin/event "$userid" LEVELUP "$lvl"
+

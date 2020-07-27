@@ -1,0 +1,14 @@
+#!/bin/bash
+set -ueo pipefail
+botid="$(sbin/readnum "$0" 'bot ID' "$1")"
+botname="$2"
+if [ -z "$botname" ]; then
+	printf '%s: empty bot name\n' "$(basename "$0")" 1>&2
+	exit 1
+fi
+if [ ! -e home/"$botid" ]; then
+	sbin/adduser "$botid"
+fi
+ln -sfr home/"$botid" root
+printf '%s' "$botname" > root/name
+

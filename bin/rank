@@ -1,0 +1,17 @@
+#!/bin/bash
+set -ueo pipefail
+
+target="$AUTHORID"
+if [[ "$#" -gt 0 ]]; then
+	target="$(sbin/read-mention "$1")"
+	if [ ! -e home/"$target" ]; then
+		echo "This user isn't registered! To register a user, they have to send a message to any channel."
+		exit 1
+	fi
+fi
+
+lv="$(cat home/"$target"/level)"
+xp="$(cat home/"$target"/xp)"
+printf "Level: %d\nXP: %d\nRemaining XP until the next level: %d\n" \
+	"$lv" "$xp" "$(( "$(sbin/max-xp "$lv")" - xp ))"
+

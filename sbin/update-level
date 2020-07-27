@@ -1,0 +1,22 @@
+#!/bin/bash
+set -ueo pipefail
+
+set +e
+	userid="$(sbin/readnum "$0" 'user id' "$1")"
+	rslt="$?"
+set -e
+if [[ ! "$rslt" -eq 0 ]]; then
+	# return a custom return value instead (1 means "didn't level up")
+	exit 55
+fi
+uhome=home/"$userid"
+
+lv="$(cat "$uhome"/level)"
+if [[ ! "$(cat "$uhome"/xp)" -lt "$(sbin/max-xp "$lv")" ]]; then
+	# woo! (assuming 1 level-up for now)
+	lv="$((lv + 1))"
+	printf "%d" "$lv" > "$uhome"/level
+	exit 0
+fi
+exit 1
+

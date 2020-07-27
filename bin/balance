@@ -1,0 +1,37 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	id="$AUTHORID"
+	pronoun='You'
+	possessive='your'
+else
+	id="$(sbin/read-mention "$1")";
+	if [ ! -e home/"$id" ]; then
+		echo "This user isn't registered! To register a user, they have to send a message to any channel."
+		exit 1
+	fi
+	if [ "$id" != "$BOTID" ]; then
+		pronoun='They'
+		possessive='their'
+	else
+		pronoun='I'
+		possessive='my'
+	fi
+fi
+
+amount="$(sbin/readnum.neg "$0" 'balance' "$(cat home/"$id"/bal)")"
+printf '%s have %s in %s wallet.\n' "$pronoun" "$(sbin/printcash "$amount")" "$possessive"
+if [ "$id" == "$AUTHORID" ]; then
+	printf 'To check your bank account, use `$ bank`.\n'
+fi
+if [ "$amount" == '0' ]; then
+	printf '*Completely broke!*'
+elif [[ ! "$amount" -lt 10000 ]]; then
+	printf "*Amazing!*\n"
+elif [[ ! "$amount" -lt 1000 ]]; then
+	printf '*%s*' "$(shuf -n 1 etc/rich-remarks)"
+elif [[ "$amount" -lt 0 ]]; then
+	printf '*How is that possible??*'
+fi
+

@@ -1,0 +1,138 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ "$PWD" != "$(dirname "$0")" ]; then
+	pushd "$(dirname "$0")"
+	did_pushd=1
+else
+	did_pushd=0
+fi
+
+# it's best to not re-use the same speakport (because lingering connections may
+# data in an order that no longer makes sense, because it was partially consumed or whatnot)
+# but can't change etc/speakport while it's running (Python script is still listening to the old port).
+# so dance around with locks a bit
+if [ -e running.wait.lk ]; then
+	echo "Won't start a new script (./running.wait.lk exists)"
+	exit 1
+fi
+touch running.wait.lk
+KANNA_LOCKFILE=running.wait.lk
+
+# This doesn't seem to work when implemented as a function.
+at_exit_code='rm -f -- "$KANNA_LOCKFILE"; kill -9 "$TAILPID"'
+trap "$at_exit_code" SIGTERM
+trap "$at_exit_code" SIGINT
+trap "$at_exit_code" SIGTERM
+
+# Try to start, if not already running
+if [ -e running.lk ]; then
+	printf 'Waiting for running.lk to stop existing...\n'
+	while [ -e running.lk ]; do
+		sleep 1
+	done
+fi
+touch running.lk
+KANNA_LOCKFILE=running.lk
+# done waiting *AFTER* securing the lock
+rm running.wait.lk
+
+LOGFILE=var/log/rk
+PREVLOG=var/log/rk.previous
+
+if [ -e "$LOGFILE" ]; then
+	echo "Moving pre-existing var/log to the end of var/log.previous..."
+	cat "$LOGFILE" >> "$PREVLOG"
+	echo -n > "$LOGFILE"
+fi
+
+echo "Randomizing etc/speakport..."
+printf '%d' "$(( 10000 + "$RANDOM" % 30000 ))" > etc/speakport
+
+function logn() {
+	printf '%d %s' "$(date +%s)" "$@" | tee --append "$LOGFILE" >/dev/null
+}
+function logfin() {
+	printf '%s\n' "$@" | tee --append "$LOGFILE" >/dev/null
+}
+function log() {
+	printf '%d %s\n' "$(date +%s)" "$@" | tee --append "$LOGFILE" >/dev/null
+}
+function logquiet() {
+	printf '%d %s\n' "$(date +%s)" "$@" >> "$LOGFILE"
+}
+
+
+./boot.py | {
+	mkdir -p tmp var/log
+	echo "Hello."
+	# handle ready
+	read -r -d $'\0' botid
+	read -r -d $'\0' botname
+	sbin/on-ready "$botid" "$botname"
+	echo "Logged in as $botname."
+	log "Logged in as $botname."
+	# print bugs.
+	echo 'tail -f var/log/bugs -n 0 &'
+	tail -f var/log/kanna-error var/log/bugs -n 0 &
+	TAILPID="$!"
+	# invoke on-message for the script, since it's so incompetent.
+	BOTID="$botid"
+	export BOTID
+	while true; do
+		read -r -d $'\0' srcid
+		read -r -d $'\0' srcname
+		read -r -d $'\0' authid
+		read -r -d $'\0' authname
+		read -r -d $'\0' message
+
+		logn "[$srcname] <$authname>: $message | "
+
+		# create streams that don't exist
+		if [ ! -e dev/id/"$srcid" ]; then
+			ch="$(cut -b 1 <<< "$srcname")"
+			if [ "$ch" == '#' ]; then
+				sbin/mkchan "$srcid" "$srcname"
+			elif [ "$ch" == '@' ]; then
+				sbin/mkdm "$srcid" "$srcname"
+			else
+				logfin "rk: Unknown stream type ($srcid:$srcname)"
+				exit 1
+			fi
+		fi
+		{
+			set +e
+			# keep these commands together
+			/usr/bin/time -q -f %e -o tmp/on-message-time sbin/on-message 1>tmp/onmsg.1 2>tmp/onmsg.2 \
+				"$srcid" "$srcname" "$authid" "$authname" <<< "$message"
+			result="$?"
+			# keep these commands together
+			set -e
+		}
+		logfin "[r:$result|t:$(cat tmp/on-message-time)]"
+		# speak each line in the channel
+		stdout="$(cat tmp/onmsg.1)"
+		if [ -n "$stdout" ]; then
+			# Don't need to log what will show up in the message stream anyway
+			log "on-message(stdout):"
+			log "$(sed 's/^/\t/g' <<< "$stdout")"
+			sbin/say "$srcid" <<< "$stdout"
+		fi
+		errout="$(cat tmp/onmsg.2)"
+		if [ -n "$errout" ]; then
+			log "on-message(stderr):"
+			log "$(sed 's/^/\t/g' <<< "$errout")"
+			# can cause recursive event errors that spam to oblviion
+			{
+				printf 'The message:```\n[%s] <%s>: %s [r:%d]```' \
+					"$srcname" "$authname" "$message" "$result"
+				printf 'Caused stderr:```\n%s```With return value: `%s`' "$errout" "$result"
+			}
+		fi
+	done
+}
+
+if [[ "$did_pushd" -eq 1 ]]; then
+	popd
+fi
+

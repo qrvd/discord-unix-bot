@@ -1,0 +1,2 @@
+add tokens to etc/token/kanna, etc/bot/{pawn,thief}.token (WITHOUT a terminating newline, perhaps by using printf)
+then run ./rk

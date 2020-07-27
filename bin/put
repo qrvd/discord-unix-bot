@@ -1,0 +1,41 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [[ "$#" -eq 0 ]]; then
+	printf '%s\n' "$(sbin/banktell "$AUTHORID")"
+	exit 0
+fi
+
+bal="$(cat "$AUTHORHOME"/bal)"
+if [[ "$bal" -eq 0 ]]; then
+	printf "Sorry! Your wallet is currently empty, so you can't \`put\` any money into the bank."
+	exit 1
+fi
+
+bankbal="$(cat "$AUTHORHOME"/bankbal)"
+amtstr="$(sbin/tolower <<< "$1" | tr -d \$)"
+if [ "$amtstr" == 'all' ]; then
+	amt="$bal"
+else
+	amt="$(sbin/readnum.user "$0" "money amount" "$amtstr")"
+	if [[ "$amt" -gt "$bal" ]]; then
+		printf 'Since you only have %s **in your wallet**, I will `put` that much instead.\n' \
+			"$(sbin/printcash "$bal")" | sbin/say "$SRCID"
+		amt="$bal"
+	fi
+fi
+
+# run event
+printf '**%s**: Putting %s into the bank...' "$(sbin/printname "$AUTHORID")" "$(sbin/printcash "$amt")" | sbin/say "$SRCID"
+sbin/event "$AUTHORID" DEPOSIT "$amt"
+
+# resolve
+sbin/modify-balance "$AUTHORID" -"$amt"
+printf '%d' "$((amt + bankbal))" > "$AUTHORHOME"/bankbal
+
+# announce
+printf '%s I have moved **%s** into your bank account!\n' \
+	"$(sbin/mention "$AUTHORID")" "$amt"
+printf 'You now have %s in the bank, and %s in the wallet.' \
+	"$(sbin/printcash "$(cat "$AUTHORHOME"/bankbal)")" "$(sbin/printcash "$(cat "$AUTHORHOME"/bal)")"
+

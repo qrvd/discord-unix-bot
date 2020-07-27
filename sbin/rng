@@ -1,0 +1,11 @@
+#!/bin/bash
+set -ueo pipefail
+
+min="$1"
+var="$2"
+if [ "$var" != '0' ]; then
+	printf "%d" "$((min + RANDOM % var))"
+else
+	printf "%d" "$min"
+fi
+

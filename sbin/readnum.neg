@@ -1,0 +1,15 @@
+#!/bin/bash
+set -ueo pipefail
+
+# argument declarations must be consistent between files readnum & readnum.user
+scriptpath="$1"
+name="$2"
+str="$3"
+
+if [[ "$(cut -b 1 <<< "$str")" != '-' ]]; then
+	sbin/readnum "$scriptpath" "$name" "$str"
+else
+	printf '-'
+	sbin/readnum "$scriptpath" "$name" "$(cut -b 2- <<< "$str")"
+fi
+

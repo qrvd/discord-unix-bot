@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ueo pipefail
+
+find home -path '*/quest/[[:digit:]]' | cut -d / -f 2,4 | tr / ' '
+

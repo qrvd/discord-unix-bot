@@ -1,0 +1,8 @@
+#!/bin/bash
+set -ueo pipefail
+
+userid="$(sbin/readnum "$0" 'user id' "$1")"
+amount="$(sbin/readnum "$0" 'amount' "$2")"
+xp="$(cat home/"$userid"/xp)"
+printf '%d' "$((xp + amount))" > home/"$userid"/xp
+

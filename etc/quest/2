@@ -1,0 +1,85 @@
+#!/bin/bash
+set -ueo pipefail
+
+# Don't use the letter "A" the whole week
+
+if [[ ! "$QUESTTIME" -lt 604800 ]]; then
+	# nice nice nice nice nice nice!
+	sbin/transfer-balance "$BOTID" "$AUTHORID" 5000
+	echo 'Your reward of $5000 has been awarded!'
+	exit 101
+fi
+
+if [ -z "$RAWMESSAGE" ] || [ -z "$MESSAGE" ]; then
+	exit 0
+fi
+
+if sbin/iscmd "$RAWMESSAGE" || sbin/iscmd "$MESSAGE"; then
+	exit 0
+fi
+
+# Ignore "command-looking" messages.
+# I'm just being nice.
+if [ -n "$(cut -b 1 <<< "$MESSAGE" | grep -Ei -- "^(yui |[\-41\~\!\.?\$@])")" ]; then
+	exit 0
+fi
+
+function try-quest() {
+	local str="$1"
+	# lowercase (just need to check for 'a')
+	str="$(sbin/tolower <<< "$str")"
+	# server emotes don't count
+	str="$(sed -E 's/<a?:[^:]+:[0-9]*>//g' <<< "$str")"
+	# neither do regular ones
+	str="$(sed -E 's/:[^ :]+://g' <<< "$str")"
+	# could verify if emotes show, by checking if they're in the server (or if they are one of the regular ones),
+	# or if they're external and the user has nitro
+	# which simplifies to: valid-url & (!external | external & nitro)
+	# urls don't count
+	str="$(sed -E 's|https?://(www\.)?[^ .]+\.[^ .]+[^ ]*||g' <<< "$str")"
+	if grep -qiE '[aあ]' <<< "$str"; then
+		exit 202
+	fi
+}
+
+# check if quotes are genuine (loops infinitely, so i abandoned the idea for now)
+# reading_quote=0
+# quotelines=''
+# add an extra newline so this loop can end
+# while read -r line <<< "$(printf '%s\n' <<< "$RAWMESSAGE")"; do
+# 	if [ "$(cut -b 1-2 <<< "$line")" == '> ' ]; then
+# 		# may well be a quote
+# 		realline="$(cut -b 3- <<< "$line")"
+# 		if [[ "$reading_quote" -eq 0 ]]; then
+# 			reading_quote=1
+# 			quotelines=''
+# 		fi
+# 		quotelines="$quotelines$realline\n"
+# 	elif [[ "$reading_quote" -eq 1 ]]; then
+# 		# this line better start with a mention
+# 		set +e
+# 			userid="$(sbin/read-mention "$(sed -E "s/^\s+//g;" <<< "$line" | cut -d ' ' -f 1)")";
+# 			rslt="$?"
+# 		set -e
+# 		if [[ ! "$rslt" -eq 0 ]]; then
+# 			try-quest "$quotelines"
+# 		else
+# 			# check that the message being quoted really exists
+# 			msghash="$(sbin/hashstr "$(sed -E "s/^\s*> //g" <<< "$quotelines")")"
+# 			set +e
+# 				line="$(grep -rFv "$msghash" var/log/events)"
+# 			set -e
+# 			if [ -n "$line" ] || [ "$(cut -d ' ' -f 2-3 <<< "$line")" != "$userid MESSAGEHASH" ]; then
+# 				# It was never said, or not by that person.
+# 				try-quest "$quotelines"
+# 			fi
+# 		fi
+# 		reading_quote=0
+# 	fi
+# done
+
+set +e
+	unquoted="$(grep -vE '^\s*> ' <<< "$RAWMESSAGE")"
+set -e
+try-quest "$unquoted"
+exit 0

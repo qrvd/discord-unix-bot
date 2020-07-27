@@ -1,0 +1,7 @@
+#!/bin/bash
+set -ueo pipefail
+
+if [ -e var/drop/has-picked ]; then
+	printf '%s: pick has already been done' "$0" 1>&2
+	exit 1
+fi

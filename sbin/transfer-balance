@@ -1,0 +1,12 @@
+#!/bin/bash
+set -ueo pipefail
+
+from="$(sbin/readnum "$0" 'from' "$1")"
+to="$(sbin/readnum "$0" 'to' "$2")"
+amount="$(sbin/readnum "$0" 'amount' "$3")"
+sbin/modify-balance "$from" -"$amount"
+sbin/modify-balance "$to" "$amount"
+
+# log the event
+sbin/event "$from" TRANSFER "$amount" TO "$to"
+

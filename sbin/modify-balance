@@ -1,0 +1,6 @@
+#!/bin/bash
+set -ueo pipefail
+
+target="$(sbin/readnum "$0" 'target ID' "$1")"
+amount="$(sbin/readnum.neg "$0" 'amount' "$2")"
+printf "%d" "$(( "$(cat home/"$target"/bal)" + amount))" > home/"$target"/bal
